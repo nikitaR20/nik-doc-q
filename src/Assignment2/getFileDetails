@@ -83,7 +83,6 @@ def main():
     if os.path.exists("token.json"):
       os.remove("token.json")
       print("Deleted token.json")
-    
 #This line ensures your script only runs main() when it’s executed directly, not when it’s imported by another script.
 if __name__ == "__main__":
     main()
