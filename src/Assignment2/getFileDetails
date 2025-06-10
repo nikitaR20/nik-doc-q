@@ -1,0 +1,89 @@
+#Program to fetch files from Google Drive folder
+import os.path
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+
+#Defining scope for OAuth authentication. This defines scope of what permissions the program can ask from the user.
+#Here, defined scope lets the authentication flow ask only for permissions to access metadata of files.
+SCOPES = ["https://www.googleapis.com/auth/drive.metadata.readonly"]
+
+#function to authenticate user
+def authenticate_user():
+    #define creds variable and intialize it with value None
+    creds = None
+
+    #Check if access token file "token.json" already exists from previous session
+    #token.json is automatically created by Python when OAuth authentication is successful
+
+    if os.path.exists("token.json"):
+        #from_authorized_user_file gets the user access token file, parses it, 
+        #checks whether the token has the required permissions as defined in the SCOPES variable
+        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+
+    if not creds or not creds.valid:
+        flow = InstalledAppFlow.from_client_secrets_file("src/Assignment2/credentials.json", SCOPES)
+        #open local browser on any available port
+        creds = flow.run_local_server(port=0)
+        # Save the access and refresh tokens so that user is not asked to login everytime if token is valid
+        with open("token.json", "w") as token:
+            token.write(creds.to_json())
+
+    return creds
+
+def list_drive_files(service):
+    
+    try:
+        #variable to store q parameter value file type and name
+        folderNameParameter = "mimeType='application/vnd.google-apps.folder' and name='pythonSampleFiles'"
+        folder_results = service.files().list(
+            q = folderNameParameter,
+            fields="files(id, name)"
+        ).execute()
+
+        folders = folder_results.get("files", [])
+        test_folder_id = folders[0]["id"] 
+
+        #to list all files whose parent = pythonSampleFiles
+        file_results = service.files().list(
+          q=f"'{test_folder_id}' in parents",
+          fields="files(id, name, mimeType, size)",
+          ).execute()
+        files = file_results.get("files", [])
+
+        if not files:
+            print("No files found.")
+            return
+
+        
+        #Display file details
+        print(f"{'File Name':40} {'Size (bytes)':15} {'Type'}")
+        print("-" * 80)
+        for file in files:
+            name = file.get("name")
+            size = file.get("size", "N/A")
+            mime = file.get("mimeType")
+            print(f"{name:40} {size:15} {mime}")
+
+    except HttpError as error:
+        print(f"An error occurred: {error}")
+
+def main():
+   
+    creds = authenticate_user()
+    #using build() function of googleclientAPI to create service object to interact with the API
+    #"drive" states type of service, here Google Drive, API version=V3
+    service = build("drive", "v3", credentials=creds)
+    
+    list_drive_files(service)
+    #Delete local token.json file once done
+    
+    if os.path.exists("token.json"):
+      os.remove("token.json")
+      print("Deleted token.json")
+    
+#This line ensures your script only runs main() when it’s executed directly, not when it’s imported by another script.
+if __name__ == "__main__":
+    main()
