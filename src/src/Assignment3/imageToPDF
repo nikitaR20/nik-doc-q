@@ -1,0 +1,117 @@
+import os
+import io
+import pytesseract
+from PIL import Image
+from fpdf import FPDF
+import pytesseract
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
+
+# === GOOGLE DRIVE API AUTHENTICATION ===
+SCOPES = ['https://www.googleapis.com/auth/drive']
+creds = None
+
+if os.path.exists('token.json'):
+    creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+else:
+    flow = InstalledAppFlow.from_client_secrets_file("src/Assignment2/credentials.json", SCOPES)
+    creds = flow.run_local_server(port=0)
+    with open('token.json', 'w') as token:
+        token.write(creds.to_json())
+
+drive_service = build('drive', 'v3', credentials=creds)
+
+# === FIND FOLDER IDS ===
+def get_folder_id(folder_name, parent_id=None):
+    query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder'"
+    if parent_id:
+        query += f" and '{parent_id}' in parents"
+    results = drive_service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+    folders = results.get('files', [])
+    return folders[0]['id'] if folders else None
+
+root_folder_id = get_folder_id('assignment3')
+input_folder_id = get_folder_id('input', root_folder_id)
+output_folder_id = get_folder_id('output', root_folder_id)
+
+# === DOWNLOAD IMAGES FROM INPUT FOLDER ===
+image_files = drive_service.files().list(q=f"'{input_folder_id}' in parents and mimeType contains 'image/'",
+                                         fields="files(id, name)").execute().get('files', [])
+
+pdf = FPDF()
+pdf.set_auto_page_break(auto=True, margin=15)
+
+for file in image_files:
+    request = drive_service.files().get_media(fileId=file['id'])
+    fh = io.BytesIO()
+    downloader = MediaIoBaseDownload(fh, request)
+    done = False
+    while not done:
+        status, done = downloader.next_chunk()
+
+
+    fh.seek(0)
+    img = Image.open(fh)
+    text = pytesseract.image_to_string(img)
+    
+    def remove_footer_lines(text, max_footer_lines=3):
+        lines = text.strip().split('\n')
+
+        def is_potential_footer(line):
+            line = line.strip()
+            # Treat as footer if:
+            return (
+                len(line) < 50 and                              # short line (likely a footer)
+                not line.endswith(('.', '?', '!')) and                     # not a full sentence
+                (sum(c.isdigit() for c in line) >= 2 or        # has 2+ digits (time, %, page)
+                "%" in line or
+                line.lower().count(" ") < 3)                  # few words = likely junk
+            )
+
+        # Check from bottom up
+        removed = 0
+        while lines and removed < max_footer_lines:
+            if is_potential_footer(lines[-1]):
+                lines.pop()
+                removed += 1
+            else:
+                break
+
+        return "\n".join(lines)
+
+    cleaned_text = remove_footer_lines(text)
+
+# Encoding for PDF compatibility
+    cleaned_text = cleaned_text.encode('latin-1', errors='ignore').decode('latin-1')
+    # Clean (basic version)
+    #cleaned_text = "\n".join([line for line in text.split('\n') if line.strip() and "Page" not in line])
+    #cleaned_text = cleaned_text.encode('latin-1', errors='ignore').decode('latin-1')
+
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    for line in cleaned_text.split('\n'):
+        pdf.multi_cell(0, 10, line)
+
+# === SAVE PDF LOCALLY AND UPLOAD TO DRIVE ===
+#output_path = "assignment3_output.pdf"
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Build full path to output PDF inside the same folder as the script
+output_path = os.path.join(script_dir, "assignment3_output.pdf")
+
+pdf.output(output_path)
+
+# Upload PDF to Google Drive
+file_metadata = {
+    'name': 'assignment3_output.pdf',
+    'parents': [output_folder_id],
+    'mimeType': 'application/pdf'
+}
+media = MediaFileUpload(output_path, mimetype='application/pdf')
+upload = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+
+print(f"✅ PDF uploaded to Google Drive with ID: {upload['id']}")
