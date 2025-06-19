@@ -223,6 +223,7 @@ venv/
 *.pth
 *.safetensors
 faiss_index/
+faiss_store/
 embeddings.npy
 config.py
 
