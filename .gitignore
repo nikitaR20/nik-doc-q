@@ -195,3 +195,40 @@ cython_debug/
 #Ignore Credentials.json and token.json
 credentials.json
 token.json
+
+# Python bytecode and cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Virtual environments
+.venv/
+env/
+venv/
+*.env
+
+# LangChain + LLM
+*.npy
+*.faiss
+*.idx
+*.gguf
+*.bin
+*.pth
+*.safetensors
+faiss_index/
+embeddings.npy
+config.py
+
+# IDE/editor configs
+.vscode/
+.idea/
+
+# Logs
+*.log
